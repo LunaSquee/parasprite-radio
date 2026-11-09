@@ -102,11 +102,28 @@ function radioPlayer (opts = {}) {
 
   playstopbtn.disabled = false
 
+  function resumeAudioContext () {
+    if (acx && acx.state === 'suspended' && acx.resume) {
+      acx.resume().catch(() => {})
+    }
+  }
+
   function initializeVisualizer () {
     acx = new AudioContext()
     if (!acx.createGain || !acx.createMediaElementSource || !acx.createAnalyser) {
       useVisualizer = false
       return
+    }
+
+    // with autoplay there was no gesture yet: resume on the first interaction
+    if (acx.state === 'suspended') {
+      const onGesture = () => {
+        resumeAudioContext()
+        document.removeEventListener('click', onGesture, true)
+        document.removeEventListener('keydown', onGesture, true)
+      }
+      document.addEventListener('click', onGesture, true)
+      document.addEventListener('keydown', onGesture, true)
     }
 
     canvas = document.createElement('canvas')
@@ -175,6 +192,11 @@ function radioPlayer (opts = {}) {
     playstopbtn.textContent = 'Buffering'
     playstopbtn.className = 'loading'
 
+    // Browsers start an AudioContext created without a user gesture as
+    // "suspended" (autoplay policy). All sound goes through it when the
+    // visualizer is on, so resume it here (called from the Play click).
+    resumeAudioContext()
+
     audioTag = new Audio()
     document.body.appendChild(audioTag)
     audioTag.addEventListener('error', handleStreamEnded, false)
@@ -221,7 +243,13 @@ function radioPlayer (opts = {}) {
     }
 
     audioTag.load()
-    audioTag.play()
+    const playPromise = audioTag.play()
+    if (playPromise && playPromise.catch) {
+      playPromise.catch((err) => {
+        // autoplay blocked (no user gesture yet): reset so one click plays
+        if (err && err.name === 'NotAllowedError') stopRadio()
+      })
+    }
     // notify.check()
 
     function canPlayAudio (e) {
