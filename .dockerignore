@@ -1,5 +1,10 @@
 /node_modules/
-/build/
+/build/*
+!/build/icons/
 .DS_Store
 ._*
+.git
 docker
+archive
+conf/radio.toml
+liq/radio.log

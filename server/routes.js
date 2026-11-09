@@ -1,6 +1,7 @@
 
 import path from 'path'
 import fs from 'fs'
+import dns from 'dns'
 import express from 'express'
 import passport from 'passport'
 import * as mm from 'music-metadata'
@@ -38,13 +39,35 @@ function isAdmin (req, res, next) {
   }
 }
 
+// Internal requests come from Liquidsoap: either on this machine, or (e.g. in
+// docker) from whatever address config.liquidsoap.host resolves to.
+function normalizeIP (ip) {
+  return (ip || '').replace(/^::ffff:/, '')
+}
+
+function liquidsoapAddresses () {
+  const host = config.liquidsoap.host
+  if (!host || host === 'localhost') return Promise.resolve([])
+  return dns.promises.lookup(host, { all: true })
+    .then((list) => list.map((a) => normalizeIP(a.address)))
+    .catch(() => [])
+}
+
 function isInternal (req, res, next) {
-  if (req.ip === '127.0.0.1' || req.ip === '::1') {
-    next()
-  } else {
+  const ip = normalizeIP(req.socket.remoteAddress)
+  function deny () {
     res.writeHead(403)
     res.end('403 Permission denied. Only internal!')
   }
+  if (ip === '127.0.0.1' || ip === '::1') {
+    next()
+    return
+  }
+  // looked up per request so a restarted container with a new IP still works
+  liquidsoapAddresses().then((addrs) => {
+    if (addrs.indexOf(ip) !== -1) next()
+    else deny()
+  })
 }
 
 function cors (res) {

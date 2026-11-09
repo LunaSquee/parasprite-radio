@@ -18,7 +18,14 @@ services:
     networks:
       - parasprite
   mysql:
-    image: mysql
+    # MariaDB: the old "mysql" npm driver can't authenticate against MySQL 8+
+    image: mariadb:11.4
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     ports:
       - 3306:3306
     environment:
@@ -40,11 +47,6 @@ services:
     restart: unless-stopped
     depends_on:
       - icecast
-    environment:
-      # the node web server runs on the host
-      - SERVER_HOST=host.docker.internal
-    extra_hosts:
-      - host.docker.internal:host-gateway
     ports:
       - 7004:7004
       - 7005:7005
@@ -53,6 +55,30 @@ services:
       - .:/app
       - ./docker/music:/music:ro
       - ./docker/playlists:/data/audio/playlists:ro
+      # HLS output, served by the web server
+      - ./docker/streams:/tmp/pr/streams
+    networks:
+      - parasprite
+  server:
+    build:
+      context: .
+      dockerfile: docker/server/Dockerfile
+    restart: unless-stopped
+    # create/upgrade the database schema, then start the web server
+    command: ["sh", "-c", "node_modules/.bin/knex migrate:latest && exec node bin/startserver"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      liquidsoap:
+        condition: service_started
+      mpd:
+        condition: service_started
+    ports:
+      - 8002:8002
+    volumes:
+      - ./conf:/app/conf:ro
+      - ./docker/music:/music:ro
+      - ./docker/streams:/tmp/pr/streams
     networks:
       - parasprite
 
