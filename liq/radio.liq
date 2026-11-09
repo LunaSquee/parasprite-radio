@@ -1,10 +1,11 @@
 #!/usr/bin/liquidsoap
+# Parasprite Radio -- Liquidsoap 2.x
 
 # Put the log file in some directory
-set("log.file.path","./radio.log")
-set("log.file", false)
-set("log.stdout", true)
-#set("log.level", 4)
+settings.log.file.path := "./radio.log"
+settings.log.file := false
+settings.log.stdout := true
+#settings.log.level := 4
 
 %include "config.liq"
 
@@ -12,112 +13,89 @@ set("log.stdout", true)
 inDev = argv(1) == "dev"
 
 # Use the telnet server for requests
-set("server.telnet", true)
-set("server.telnet.bind_addr", "0.0.0.0")
-set("server.telnet.port", confint("liquidsoap.port_telnet", 7004))
+settings.server.telnet := true
+settings.server.telnet.bind_addr := "0.0.0.0"
+settings.server.telnet.port := confint("liquidsoap.port_telnet", 7004)
 
 port_input = confint("liquidsoap.port_input", 7005)
 
-set("harbor.bind_addr", "0.0.0.0")
-set("harbor.verbose", false)
-set("harbor.reverse_dns", true)
+settings.harbor.bind_addrs := ["0.0.0.0"]
+settings.harbor.verbose := false
+settings.harbor.reverse_dns := true
 
-set("mpd.host", "127.0.0.1")
-set("mpd.port", 6600)
-set("mpd.path", confstr("general.media_dir"))
-set("mpd.randomize", false)
+settings.frame.audio.samplerate := 48000
+settings.audio.converter.samplerate.libsamplerate.quality := "best"
 
-set("alsa.alsa_buffer", 1)
-set("alsa.buffer_length", 20)
-set("alsa.periods", 0)
+#settings.decoder.debug := true
 
-set("frame.audio.samplerate",48000)
-set("audio.converter.samplerate.libsamplerate.quality","best")
+def env_or(name, default) =
+	v = environment.get(name)
+	if v == "" then default else v end
+end
 
-#set("decoder.debug",true)
-#set("extproto.use_server_name",true)
-
-set("say.program", "scripts/liquidtts")
-
-serverport = (if getenv("SERVER_PORT") == "" then "#{confint('server.port', 8002)}" else getenv("SERVER_PORT") end)
+serverport = env_or("SERVER_PORT", "#{confint('server.port', 8002)}")
+serverhost = env_or("SERVER_HOST", confstr("server.host", "localhost"))
+serverurl  = "http://#{serverhost}:#{serverport}"
 
 %include "utils.liq"
 %include "tunein.liq"
 %include "protocols.liq"
 %include "decoders.liq"
 
-meta = ref []
-live_meta = ref []
-live_token = ref ""
-live_stop_record = ref (fun () -> ())
-live_src = ref blank()
-live_busy = ref false
-skip_source = ref blank()
+meta = ref([])
+history = ref([])
+history_size = 20
+live_meta = ref([])
+live_token = ref("")
+live_busy = ref(false)
 
-archiveEncoder = %mp3.vbr(quality=0, stereo_mode="joint_stereo", internal_quality=0, id3v2=true)
-
-
-# temporary solution https://github.com/savonet/liquidsoap/issues/217
-def track_end_cleanup(time, m)
-	if m["temporary"] == "true" and m["filename"] != "" then
-		#print("time left: #{time}")
-		print("rm "^string.quote(m["filename"]))
-		system("rm "^string.quote(m["filename"]))
-		#print(m)
-	end
+if confbool("lastfm.enable") then
+	log.important("lastfm.enable is set, but Last.fm scrobbling is not available in Liquidsoap 2.x; ignoring.")
 end
-
 
 def scrobble_nowplaying(m)
-	if confbool("lastfm.enable") then
-		print("Scrobbling now playing to Last.fm")
-		lastfm.nowplaying(user=confstr("lastfm.username"), password=confstr("lastfm.password"), m)
-	end
 	if confbool("tunein.enable") then
 		print("Scrobbling now playing to TuneIn")
-		tunein.nowplaying(partner_id=confstr("tunein.partnerId"), partner_key=confstr("tunein.partnerKey"), station_id=confstr("tunein.stationId"), m)
-	end
-end
-
-def scrobble_submit(t, m)
-	if confbool("lastfm.enable") then
-		print("Scrobbling track to Last.fm")
-		lastfm.submit(user=confstr("lastfm.username"), password=confstr("lastfm.password"), m)
+		tunein_nowplaying(partner_id=confstr("tunein.partnerId"), partner_key=confstr("tunein.partnerKey"), station_id=confstr("tunein.stationId"), m)
 	end
 end
 
 # send metadata to server and print the response
 def send_metadata(m)
-	data = json_of(m)
+	data = assoc_to_json(m)
 	# print("Sending metadata: "^data)
-	let (_,_,data) = http.post(
-		data    = data,
-		headers = [("Content-Type", "application/json; charset=utf-8")],
-		timeout = 10.0,
-		"http://#{confstr('server.host', 'localhost')}:#{serverport}/internal/meta"
-	)
-	print("META: "^data)
+	try
+		resp = http.post(
+			data    = data,
+			headers = [("Content-Type", "application/json; charset=utf-8")],
+			timeout = 10.0,
+			"#{serverurl}/internal/meta"
+		)
+		print("META: #{resp.status_code} #{resp}")
+	catch e do
+		print("META: could not reach server at #{serverurl}: #{e.message}")
+	end
 end
 
 def update_nowplaying(m)
-	recode = string.recode(out_enc="UTF-8")
-	def f(x)
-		(recode(fst(x)),recode(snd(x)))
-	end
+	# drop embedded cover art (binary) and liquidsoap-internal fields
+	m = list.filter(fun(p) -> not list.mem(fst(p), ["cover", "picture", "apic", "metadata_block_picture", "coverart"]), m)
 
-	m = list.map(f,m)
-	m = list.remove_assoc("cover", m)
-	m = list.remove_assoc("picture", m)
-
-	m = if m != [] then
-		list.append(
-			[("start", string_of(time()))]
-		, m)
-	else
-		m
-	end
+	m =
+		if m != [] then
+			list.set_list([
+				("start", string(time())),
+				("on_air", time.string("%Y/%m/%d %H:%M:%S"))
+			], m)
+		else
+			m
+		end
 
 	meta := m
+
+	# keep a short history for the "history.get" command
+	h = list.cons(m, history())
+	history := if list.length(h) > history_size then list.prefix(history_size, h) else h end
 
 	send_metadata(m)
 end
@@ -126,43 +104,65 @@ server.register(
 	usage="sendmetadata",
 	description="Triggers a HTTP request to the server with metadata.",
 	"sendmetadata",
-	fun(arg) -> begin
-		send_metadata(!meta)
+	fun(_) -> begin
+		send_metadata(meta())
 		"OK!"
 	end
 )
 
-def auth_live(user,password)
+# replacement for store_metadata(id="history") from Liquidsoap 1.x
+server.register(
+	usage="history.get",
+	description="Show the metadata of the last played tracks.",
+	"history.get",
+	fun(_) -> begin
+		def fmt(acc, m) =
+			let (i, acc_out) = acc
+			lines = list.map(fun(p) -> "#{fst(p)}=#{json.stringify(snd(p))}", list.rev(m))
+			(i + 1, acc_out ^ "--- #{i} ---\n" ^ string.concat(separator="\n", lines) ^ "\n")
+		end
+		let (_, res) = list.fold(fmt, (1, ""), history())
+		res
+	end
+)
+
+def auth_live(login)
 	print("LIVE: A user is connecting...")
-	current_token = !live_token
+	current_token = live_token()
 
-	if current_token == "" or current_token == password or !live_busy == false then
-
-		let (_,_,data) = http.post(
-			data    = json_of(compact=true, [("username", user), ("password", password)]),
-			headers = [("Content-Type", "application/json; charset=utf-8")],
-			timeout = 5.0,
-			"http://#{confstr('server.host', 'localhost')}:#{serverport}/internal/authlive"
-		)
-
-		ret = of_json(default=[("error", "JSON error")], data)
+	if current_token == "" or current_token == login.password or live_busy() == false then
+		ret =
+			try
+				data = http.post(
+					data    = json.stringify(compact=true, {username=login.user, password=login.password}),
+					headers = [("Content-Type", "application/json; charset=utf-8")],
+					timeout = 5.0,
+					"#{serverurl}/internal/authlive"
+				)
+				if data.status_code != 200 then
+					[("error", "server at #{serverurl} returned HTTP #{data.status_code}")]
+				else
+					let json.parse (r : [(string * string)] as json.object) = data
+					r
+				end
+			catch e do
+				[("error", "auth request failed: #{e.message}")]
+			end
 
 		if ret["error"] == "" then
 			print("LIVE: User "^ret["live_username"]^" authenticated successfully")
 			live_meta := ret
-			live_token := password
+			live_token := login.password
 			true
 		else
 			print("LIVE: Authentication error: "^ret["error"])
 			false
 		end
-
 	else
 		print("LIVE: Another user is already connected!")
 		false
 	end
 end
-
 
 def user_connected(headers)
 	print("LIVE: Headers")
@@ -172,130 +172,51 @@ def user_connected(headers)
 		("live_ice_description", headers["ice-description"]),
 		("live_ice_genre", headers["ice-genre"]),
 		("live_ice_url", headers["ice-url"])
-	], !live_meta)
+	], live_meta())
 
 	# cleanup
-	def filter(x)
+	def keep(x)
 		value = snd(x)
-		if value == "(none)" or value == " " then
-			false
-		else
-			true
-		end
+		not (value == "" or value == "(none)" or value == " ")
 	end
 
-	m = list.filter(filter, m)
-
-	live_meta := m
+	live_meta := list.filter(keep, m)
 end
 
 def user_disconnected()
-	m = !live_meta
+	m = live_meta()
 	print("LIVE: User "^m["live_username"]^" disconnected")
 end
 
 
-def live_start_recording(mm)
-	ls = !live_src
-	token = !live_token
-
-	if token != "" and !live_busy == false then
-
-		# skip currently playing song
-		source.skip(!skip_source)
-
-		filename = "../archive/"^mm["live_username"]^"-"^mm["live_name"]^"/%Y-%m-%d/%Y-%m-%d-%H_%M_%S "^mm["live_name"]^".mp3"
-
-		# Record the live stream
-		outfile = output.file(
-			archiveEncoder,
-			on_start=fun() -> begin
-				live_busy := true
-				# would be nice to get the actual filename here aswell..
-				print("LIVE: Starting recording...")
-			end,
-			on_close=fun(f) -> begin
-				live_busy := false
-				live_token := ""
-				print("LIVE: Recording finished! #{f}")
-			end,
-			fallible=true,
-			filename,
-			ls
-		)
-
-		live_stop_record := fun() -> source.shutdown(outfile)
-	end
-end
-
-def live_end_recording(t, m)
-	print("LIVE: Stream ended!")
-	f = !live_stop_record
-	f()
-end
-
-
 # playlists
-default = audio_to_stereo(mksafe(playlist(id="default", reload_mode="seconds", reload=600, timeout=600., prefix=confstr("general.media_dir")^"/", "/data/audio/playlists/radio.m3u")))
-#extra = audio_to_stereo(playlist(id="extra", reload_mode="seconds", reload=600, timeout=600., prefix=confstr("general.media_dir")^"/", "/data/audio/playlists/extra.m3u"))
-#friendship = audio_to_stereo(amplify(1.1, playlist(id="friendship", reload_mode="watch", reload=600, "friendship.m3u")))
-#ads = audio_to_stereo(playlist(id="ads", reload_mode="watch", reload=600, prefix=confstr("general.media_dir")^"/", "/home/djazz/.mpd/playlists/ads.m3u"))
+# entries can be absolute or relative to general.media_dir (see media: protocol)
+default = stereo(mksafe(playlist(id="default", reload_mode="seconds", reload=600, prefix="media:", "/data/audio/playlists/radio.m3u")))
+#extra = stereo(playlist(id="extra", reload_mode="seconds", reload=600, prefix="media:", "/data/audio/playlists/extra.m3u"))
+#friendship = stereo(amplify(1.1, playlist(id="friendship", reload_mode="watch", "friendship.m3u")))
 
 # queues: requests; announce: plays over music
-queue1 = audio_to_stereo(request.equeue(id="queue1", conservative=true, length=60., timeout=1000.))
-queue2 = audio_to_stereo(request.equeue(id="queue2", conservative=true, length=60., timeout=1000.))
-queue3 = audio_to_stereo(request.equeue(id="queue3", conservative=true, length=60., timeout=1000.))
-announce = audio_to_stereo(request.equeue(id="announce", conservative=true, length=20., timeout=60.))
-
-add_skip_command(command="queue1.skip", queue1)
-add_skip_command(command="queue2.skip", queue2)
-add_skip_command(command="queue3.skip", queue3)
-add_skip_command(command="announce.skip", announce)
+# (request.queue registers <id>.push, <id>.queue, <id>.skip ... telnet commands)
+queue1 = stereo(request.queue(id="queue1", timeout=1000.))
+queue2 = stereo(request.queue(id="queue2", timeout=1000.))
+queue3 = stereo(request.queue(id="queue3", timeout=1000.))
+announce = stereo(request.queue(id="announce", timeout=60.))
 
 #default = random(weights=[3,1], [extra,default])
 
-source = fallback([queue1, queue2, queue3, default])
+music = fallback(id="music", [queue1, queue2, queue3, default])
 
-# scrobble music (last.fm & tunein) but not jingles etc..
-source = store_metadata(id="history", size=20, source)
-
-source = on_track(scrobble_nowplaying, source)
-source = on_end(delay=0., scrobble_submit, source)
+# scrobble music (tunein) but not jingles etc..
+music.on_track(synchronous=false, scrobble_nowplaying)
 
 # TODO: replace with jingles
-#source = rotate(weights=[1,7], [friendship,source])
+#music = rotate(weights=[1,7], [friendship,music])
 
-add_skip_command(command="skip", source)
-skip_source := source
-
-# cleanup temp files
-source = on_end(delay=0., track_end_cleanup, source)
-announce = on_end(delay=0., track_end_cleanup, announce)
-
-
-def to_live(old,new)
-	old = fade.final(duration=2., old)
-	new = fade.initial(duration=2., new)
-	sequence(merge=true, [old,new])
-end
-
-def to_songs(a,b)
-	#old = fade.final(duration=3., old)
-	#new = fade.initial(duration=5., new)
-	#sequence([old,new])
-	#source.skip(b)
-	add(normalize=false, [
-		sequence([
-			amplify(0.0, fade.final(duration=3.0, b)),
-			fade.initial(duration=3.0, b)
-		]),
-		fade.final(duration=8.0, a)
-	])
-end
+register_skip_command(command="skip", music)
 
 
 # Live input
-live = audio_to_stereo(input.harbor(
+live = stereo(input.harbor(
 	"/", # supporting shoutcast and icecast (empty mount) sources
 	id = "live",
 	buffer = 10.,
@@ -303,66 +224,101 @@ live = audio_to_stereo(input.harbor(
 	port = port_input,
 	auth = auth_live,
 	icy = true, # enables Shoutcast support (untested, uses port_input+1)
-	icy_metadata_charset = 'UTF-8',
-	metadata_charset = 'UTF-8',
+	icy_metadata_charset = "UTF-8",
+	metadata_charset = "UTF-8",
 	on_connect = user_connected,
 	on_disconnect = user_disconnected
 ))
 
-live = map_metadata(fun(m) -> !live_meta, live)
+# insert_missing: also apply the DJ info when their client sends no metadata
+live = metadata.map(id="live_meta", insert_missing=true, fun(_) -> live_meta(), live)
 
-live = map_metadata(fun(m) -> begin
-	l = ref []
-
+live = metadata.map(id="live_title", fun(m) -> begin
 	if m["song"] != "" then
-		info = string.extract(pattern="(.*?) - (.*)$", m["song"])
-		artist = info["1"]
-		title = info["2"]
-		l := list.append([
-			("title", title),
-			("artist", artist)
-		], !l)
-	else
-		if m["live_name"] != "" then
-			l := list.add(("title", m['live_name']), !l)
-		end
-	end
-
-	#list.append([
-	# ("artist", m["live_displayname"]),
-	# ("album", m["live_description"])
-	#], !l)
-	!l
-end, live)
-
-live_src := live
-
-live = on_track(live_start_recording, live)
-live = on_end(delay=0., live_end_recording, live)
-
-source = fallback(track_sensitive=false, transitions=[to_live, to_songs], [live, source])
-
-source = map_metadata(fun (m) -> begin
-	if m['filename'] != '' then
-		of_json(default=[], get_process_output('node scripts/metadata '^string.quote(m['filename'])))
+		info = r/(.*?) - (.*)$/.exec(m["song"])
+		[("title", info[2]), ("artist", info[1])]
+	elsif m["live_name"] != "" then
+		[("title", m["live_name"])]
 	else
 		[]
 	end
-end, source)
+end, live)
+
+# Record the live stream. The output is fallible, so it starts when a DJ
+# connects and stops (closing the file) when they disconnect.
+archiveEncoder = %mp3.vbr(quality=0, stereo_mode="joint_stereo", internal_quality=0, id3v2=true)
+
+def archive_filename() =
+	mm = live_meta()
+	time.string("../archive/"^mm["live_username"]^"-"^mm["live_name"]^"/%Y-%m-%d/%Y-%m-%d-%H_%M_%S "^mm["live_name"]^".mp3")
+end
+
+output.file(
+	id="live_archive",
+	archiveEncoder,
+	fallible=true,
+	on_start=fun() -> begin
+		live_busy := true
+		print("LIVE: Starting recording...")
+		# skip currently playing song
+		music.skip()
+		# tell the server we're live right away; the DJ's client may not
+		# send any stream metadata
+		m = live_meta()
+		m = if m["live_name"] != "" then list.set_pair(("title", m["live_name"]), m) else m end
+		thread.run(fun() -> update_nowplaying(m))
+	end,
+	on_stop=fun() -> begin
+		print("LIVE: Stream ended!")
+		live_busy := false
+		live_token := ""
+	end,
+	on_close=fun(f) -> print("LIVE: Recording finished! #{f}"),
+	archive_filename,
+	live
+)
+
+
+def to_live(old, new)
+	sequence([fade.out(duration=2., old), fade.in(duration=2., new)])
+end
+
+def to_songs(old, new)
+	add(normalize=false, [
+		sequence([blank(duration=3.), fade.in(duration=3., new)]),
+		fade.out(duration=8., old)
+	])
+end
+
+radio = fallback(id="main", track_sensitive=false, transition_length=8., transitions=[to_live, to_songs], [live, music])
+
+radio = metadata.map(id="mediainfo", fun (m) -> begin
+	if m["filename"] != "" then
+		try
+			let json.parse (r : [(string * string)] as json.object) =
+				process.read("node scripts/metadata "^process.quote(m["filename"]))
+			r
+		catch _ do
+			[]
+		end
+	else
+		[]
+	end
+end, radio)
 
 # update now playing (and generate cover art..)
-source = on_metadata(update_nowplaying, source)
+radio.on_metadata(synchronous=false, update_nowplaying)
 
 # crossfade songs!
-source = crossfade(conservative=true, fade_in=2., fade_out=3., width=5., source)
+radio = crossfade(fade_in=2., fade_out=3., width=5., radio)
 
 # play announcements over the music
-source = smooth_add(delay=0.3, p=0.3, normal=source, special=amplify(1.5, nrj(announce)))
-#source = add(normalize=false, [source, amplify(1.8, nrj(announce))])
+radio = smooth_add(duration=0.3, p=0.3, normal=radio, special=amplify(1.5, nrj(announce)))
+#radio = add(normalize=false, [radio, amplify(1.8, nrj(announce))])
 
 # audio tweaking
-#source = normalize(gain_max=3., gain_min=-3., source)
+#radio = normalize(gain_max=3., gain_min=-3., radio)
 
 
 %include "outputs.liq"
-#output.dummy(source)
+#output.dummy(radio)

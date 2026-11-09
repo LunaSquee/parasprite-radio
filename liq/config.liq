@@ -1,21 +1,24 @@
 
-confsrc = get_process_output("node scripts/get-config")
-config = of_json(default=[("error", "json")], confsrc)
+confsrc = process.read("node scripts/get-config")
 
-if config["error"] == "json" then
-	print("Failed to parse config JSON:")
-	print(confsrc)
-	shutdown()
-end
+config =
+  try
+    let json.parse (c : [(string * string)] as json.object) = confsrc
+    c
+  catch _ do
+    print("Failed to parse config JSON:")
+    print(confsrc)
+    shutdown()
+    []
+  end
 
-def confstr(key,default="") =
-	c = config[key]
-	if c == "" then
-		default
-	else
-		c
-	end
+def confstr(key, default="") =
+  c = config[key]
+  if c == "" then default else c end
 end
-def confint(key,default=0) = int_of_string(config[key], default=default) end
-def conffloat(key,default=0.0) = float_of_string(config[key], default=default) end
-def confbool(key,default=false) = bool_of_string(config[key], default=default) end
+def confint(key, default=0) = string.to_int(default=default, config[key]) end
+def conffloat(key, default=0.0) = string.to_float(default=default, config[key]) end
+def confbool(key, default=false) =
+  c = config[key]
+  if c == "" then default else c == "true" end
+end

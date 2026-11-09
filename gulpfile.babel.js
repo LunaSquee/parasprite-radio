@@ -119,6 +119,51 @@ function fontTask () {
   return gulp.src(fonts)
     .pipe(gulp.dest('build/style/fonts/'))
 }
+function generateFavicon (done) {
+  realFavicon.generateFavicon({
+    masterPicture: 'static/img/icons/parasprite-radio-logo.png',
+    dest: 'build/icons/',
+    iconsPath: '/',
+    design: {
+      ios: {
+        masterPicture: 'static/img/icons/parasprite-radio-logo-hex.png',
+        pictureAspect: 'backgroundAndMargin',
+        backgroundColor: '#2d2d2d',
+        margin: '0%',
+        appName: 'Parasprite Radio'
+      },
+      desktopBrowser: {},
+      windows: {
+        pictureAspect: 'noChange',
+        backgroundColor: '#da532c',
+        onConflict: 'override',
+        appName: 'Parasprite Radio'
+      },
+      androidChrome: {
+        masterPicture: 'static/img/icons/parasprite-radio-logo-hex.png',
+        pictureAspect: 'noChange',
+        themeColor: '#2d2d2d',
+        manifest: {
+          name: 'Parasprite Radio',
+          display: 'standalone',
+          orientation: 'notSet',
+          onConflict: 'override',
+          declared: true
+        }
+      },
+      safariPinnedTab: {
+        pictureAspect: 'silhouette',
+        themeColor: '#ffb330'
+      }
+    },
+    settings: {
+      scalingAlgorithm: 'Lanczos',
+      errorOnImageTooSmall: false
+    },
+    versioning: true,
+    markupFile: faviconDataFile
+  }, done)
+}
 
 function documentTask (p) {
   let simple = simpleconfig()
@@ -169,58 +214,15 @@ gulp.task('update-favicon', (done) => {
       done()
     })
   } else {
-    sequence('generate-favicon', done)
+    generateFavicon(done)
   }
 })
+
 // Generate the icons. This task takes a few seconds to complete.
 // You should run it at least once to create the icons. Then,
 // you should run it whenever RealFaviconGenerator updates its
 // package (see the update-favicon task below).
-gulp.task('generate-favicon', gulp.series('clean:icons', (done) => {
-  realFavicon.generateFavicon({
-    masterPicture: 'static/img/icons/parasprite-radio-logo.png',
-    dest: 'build/icons/',
-    iconsPath: '/',
-    design: {
-      ios: {
-        masterPicture: 'static/img/icons/parasprite-radio-logo-hex.png',
-        pictureAspect: 'backgroundAndMargin',
-        backgroundColor: '#2d2d2d',
-        margin: '0%',
-        appName: 'Parasprite Radio'
-      },
-      desktopBrowser: {},
-      windows: {
-        pictureAspect: 'noChange',
-        backgroundColor: '#da532c',
-        onConflict: 'override',
-        appName: 'Parasprite Radio'
-      },
-      androidChrome: {
-        masterPicture: 'static/img/icons/parasprite-radio-logo-hex.png',
-        pictureAspect: 'noChange',
-        themeColor: '#2d2d2d',
-        manifest: {
-          name: 'Parasprite Radio',
-          display: 'standalone',
-          orientation: 'notSet',
-          onConflict: 'override',
-          declared: true
-        }
-      },
-      safariPinnedTab: {
-        pictureAspect: 'silhouette',
-        themeColor: '#ffb330'
-      }
-    },
-    settings: {
-      scalingAlgorithm: 'Lanczos',
-      errorOnImageTooSmall: false
-    },
-    versioning: true,
-    markupFile: faviconDataFile
-  }, done)
-}))
+gulp.task('generate-favicon', gulp.series('clean:icons', generateFavicon))
 
 // Main tasks
 gulp.task('script', gulp.series('clean:script', webpackTask))

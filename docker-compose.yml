@@ -1,0 +1,60 @@
+services:
+  icecast:
+    image: pltnk/icecast2
+    ports:
+      - 8000:8000
+    volumes:
+      - ./docker/icecast.xml:/etc/icecast2/icecast.xml
+    networks:
+      - parasprite
+  mpd:
+    image: gists/mpd
+    ports:
+      - 8800:8000
+      - 6600:6600
+    volumes:
+      - ./docker/music:/music
+      - ./docker/playlists:/var/lib/mpd/playlists
+    networks:
+      - parasprite
+  mysql:
+    image: mysql
+    ports:
+      - 3306:3306
+    environment:
+      - MYSQL_ROOT_PASSWORD=P4raspriteRadio13ROOT
+      - MYSQL_PASSWORD=P4raspriteRadio13
+      - MYSQL_DATABASE=paraspriteradio
+      - MYSQL_USER=paraspriteradio
+    volumes:
+      - ./docker/database:/var/lib/mysql
+    networks:
+      - parasprite
+  liquidsoap:
+    build:
+      context: ./docker/liquidsoap
+    # run as the host user so recordings in ./archive are writable
+    user: "${LIQ_UID:-1000}:${LIQ_GID:-1000}"
+    # append "--", "dev" to run in dev mode (HLS only, no icecast)
+    command: ["radio.liq"]
+    restart: unless-stopped
+    depends_on:
+      - icecast
+    environment:
+      # the node web server runs on the host
+      - SERVER_HOST=host.docker.internal
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - 7004:7004
+      - 7005:7005
+      - 7006:7006
+    volumes:
+      - .:/app
+      - ./docker/music:/music:ro
+      - ./docker/playlists:/data/audio/playlists:ro
+    networks:
+      - parasprite
+
+networks:
+  parasprite:

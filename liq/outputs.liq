@@ -1,98 +1,83 @@
-out = output.icecast(
-	host     = confstr("icecast.host", "localhost"),
-	port     = confint("icecast.port", 8000),
-	user     = confstr("icecast.mount.username", "source"),
-	password = confstr("icecast.mount.password", "hackme"),
+icecast_encoding = confstr("icecast.encoding", "")
 
-	name        = confstr("radio.title", "Parasprite Radio"),
-	description = confstr("radio.description", "Liquidsoap Radio!"),
-	url         = confstr("radio.url", "https://www.liquidsoap.info/"),
-	genre       = confstr("radio.genre", "Misc"),
-	encoding    = confstr("icecast.encoding", ""),
+def icecast_out(~id, ~mount, ~start=true, ~send_icy_metadata=null, ~format="", enc, s) =
+	output.icecast(
+		id = id,
+		mount = mount,
+		start = start,
+		send_icy_metadata = send_icy_metadata,
+		format = format,
 
-	connection_timeout = 20.,
-	fallible = true
-)
+		host     = confstr("icecast.host", "localhost"),
+		port     = confint("icecast.port", 8000),
+		user     = confstr("icecast.mount.user", "source"),
+		password = confstr("icecast.mount.password", "hackme"),
 
-mumbleOut = output.external(id="mumble",
-	%external(
-		channels=1,
-		samplerate=48000,
-		header=false,
-		restart_on_crash=true,
-		process="node scripts/mumble.js"
-	),
-	start=confbool("mumble.enable"),
-	"true"
-)
+		name        = confstr("radio.title", "Parasprite Radio"),
+		description = confstr("radio.description", "Liquidsoap Radio!"),
+		url         = confstr("radio.url", "https://www.liquidsoap.info/"),
+		genre       = confstr("radio.genre", "Misc"),
+		encoding    = (icecast_encoding == "" ? null : icecast_encoding),
 
-streams = output.external(id="radio_streams",
-	%wav(header=false, samplerate=48000),
-	start=true,
-	fallible=true,
-	"scripts/streams.sh"
-)
+		connection_timeout = 20.,
+		fallible = true,
+		enc,
+		s
+	)
+end
 
-alsa = output.external(id="radio_alsa",
-	%wav(header=false),
-	start=false,
-	"aplay -f cd -"
-)
+# HLS streams (ffmpeg, see scripts/streams.sh)
+def streams(s) =
+	output.external(id="radio_streams",
+		%wav(header=false, samplerate=48000),
+		start=true,
+		fallible=true,
+		"scripts/streams.sh",
+		s
+	)
+end
 
-opus = output.external(
-	id="radio_opus3",
-	fallible=true,
-	%wav(header=true, samplerate=48000, channels=2),
-	"opusenc --quiet - - | oggfwd -n "^string.quote(confstr("radio.title", "Parasprite Radio"))^" -d "^string.quote(confstr("radio.description", "Liquidsoap Radio!"))^" "^string.quote(confstr("icecast.host", "localhost"))^" "^string.quote(string_of(confint("icecast.port", 8000)))^" "^confstr("icecast.mount.password", "hackme")^" /radio_opus3"
-)
-#flac = output.external(
-#	id="radio_flac2",
-#	fallible=true,
-#	start=false,
-#	%wav(header=true),
-#	"flac --best --ogg --no-seektable --silent --decode-through-errors --stdout - | oggfwd -n "^string.quote(confstr("radio.title", "Parasprite Radio"))^" -d "^string.quote(confstr("radio.description", "Liquidsoap Radio!"))^" "^string.quote(confstr("icecast.host", "localhost"))^" "^string.quote(string_of(confint("icecast.port", 8000)))^" "^confstr("icecast.mount.password", "hackme")^" /radio_flac"
-#)
-
-clock.assign_new(id="output_clock", [source])
-
+# Unused extras from the 1.x setup, kept for reference:
+# - mumble: output.external(%external(channels=1, samplerate=48000, header=false,
+#     restart_on_crash=true, process="node scripts/mumble.js"), "true", source)
+# - alsa:   output.external(%wav(header=false), "aplay -f cd -", source)
+# - opus via oggfwd: opusenc --quiet - - | oggfwd ... /radio_opus3
 
 if inDev then
-	streams(source)
+	streams(radio)
 else
-	streams(source)
+	streams(radio)
 
-	out(
+	icecast_out(
 		id = "radio",
 		mount = "radio",
 		%mp3(
 			bitrate = 320,
-			#channels = 2,
-			#quality = 3,
 			stereo = true,
 			stereo_mode = "joint_stereo",
 			internal_quality = 0,
 			id3v2 = true,
-			samplerate=48000
+			samplerate = 48000
 		),
-		start=true,
-		source
+		start = true,
+		radio
 	)
 
-		#out(
-		#	id = "radio_mobile",
-		#	mount = "radio_mobile",
-		#	%fdkaac(
-		#		channels = 2,
-		#		samplerate = 48000,
-		#		bitrate = 64,
-		#		afterburner = true,
-		#		aot="mpeg2_he_aac_v2"
-		#	),
-		#	start = false,
-		#	source
-		#),
+#	icecast_out(
+#		id = "radio_mobile",
+#		mount = "radio_mobile",
+#		%fdkaac(
+#			channels = 2,
+#			samplerate = 48000,
+#			bitrate = 64,
+#			afterburner = true,
+#			aot = "mpeg2_he_aac_v2"
+#		),
+#		start = false,
+#		radio
+#	)
 
-	out(
+	icecast_out(
 		id = "radio_mobile_vorbis",
 		mount = "radio_mobile_vorbis",
 		%vorbis(
@@ -100,10 +85,10 @@ else
 			quality = 0.1
 		),
 		start = false,
-		source
+		radio
 	)
 
-	out(
+	icecast_out(
 		id = "radio_opus2",
 		mount = "radio_opus2",
 		%opus(
@@ -118,11 +103,11 @@ else
 			signal = "music"
 		),
 		start = false,
-		merge_tracks(source)
+		merge_tracks(radio)
 	)
 
-		# a better OPUS encoder
-	out(
+	# a better OPUS encoder
+	icecast_out(
 		id = "radio_opus",
 		mount = "radio_opus",
 		%external(
@@ -130,55 +115,28 @@ else
 			samplerate = 48000,
 			header = true,
 			restart_on_crash = true,
-			#restart_on_new_track = false,
 			"opusenc --ignorelength - -"
 		),
-		icy_metadata = "false",
+		send_icy_metadata = false,
 		format = "audio/ogg",
 		start = false,
-		merge_tracks(source)
+		merge_tracks(radio)
 	)
 
-		# opus(merge_tracks(source), start = true),
-
-		# out(
-		# 	id = "radio_flac",
-		# 	mount = "radio_flac",
-		# 	%ogg(%flac(
-		# 		samplerate = 48000,
-		# 		channels    = 2,
-		# 		compression = 7
-		# 	)),
-		# 	icy_metadata = "false",
-		# 	start = false,
-		# 	merge_tracks(source)
-		# ),
-
-		# a better FLAC encoder
-		# out(
-		# 	id = "radio_flac",
-		# 	mount = "radio_flac",
-		# 	%external(
-		# 		channels = 2,
-		# 		samplerate = 48000,
-		# 		header = true,
-		# 		restart_on_crash = true,
-		# 		#restart_on_new_track = false,
-		# 		"flac --best --ogg --silent --stdout -"
-		# 	),
-		# 	icy_metadata = "false",
-		# 	format = "audio/ogg",
-		# 	start = false,
-		# 	source
-		# )
-
-		#flac(source)
-	#])
-
-	# to FM transmitter
-	#output.alsa(id="alsa", bufferize=true, clock_safe=false, fallible = true, source)
+	# a better FLAC encoder
+#	icecast_out(
+#		id = "radio_flac",
+#		mount = "radio_flac",
+#		%external(
+#			channels = 2,
+#			samplerate = 48000,
+#			header = true,
+#			restart_on_crash = true,
+#			"flac --best --ogg --silent --stdout -"
+#		),
+#		send_icy_metadata = false,
+#		format = "audio/ogg",
+#		start = false,
+#		radio
+#	)
 end
-
-#output.alsa(clock_safe=false, source)
-
-#clock.assign_new(id="output_clock", sync=false,[mumbleOut(mean(mksafe(buffer(buffer=5.0,source))))])

@@ -141,7 +141,8 @@ const API = {
 
     add (id, item, cb) {
       console.log('Liquidsoap: Add to queue:', item)
-      liqCommand('queue' + id + '.push ' + item, function (err, data) {
+      // Liquidsoap 2.x no longer sets the "source" metadata, so annotate it
+      liqCommand('queue' + id + '.push annotate:source="queue' + id + '":' + item, function (err, data) {
         cb && cb(err)
       })
     }
