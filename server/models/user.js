@@ -22,6 +22,7 @@ const UserAuth = bookshelf.Model.extend({
 const API = {
   findById: async function (id, withAuth = false) {
     let user = await User.forge({id: id}).fetch({
+      require: false,
       columns: ['id', 'username', 'displayName', 'email', 'level', 'avatarUrl', 'canMakeShows']
     })
     if (!user) return null
@@ -29,9 +30,10 @@ const API = {
     user.auths = null
     if (withAuth) {
       let auths = await UserAuth.forge({UserId: user.id}).fetch({
+        require: false,
         columns: ['provider', 'username', 'displayName', 'email', 'avatarUrl']
       })
-      user.auths = auths.serialize()
+      user.auths = auths ? auths.serialize() : null
     }
     return user
   },
@@ -48,7 +50,7 @@ const API = {
   },
 
   handleAuth: async function (info) {
-    let userAuth = await UserAuth.forge({provider: info.provider, uid: info.uid}).fetch()
+    let userAuth = await UserAuth.forge({provider: info.provider, uid: info.uid}).fetch({ require: false })
     if (!userAuth) {
       let user = User.forge({
         username: info.username,
@@ -80,7 +82,7 @@ const API = {
         avatarUrl: info.avatarUrl
       })
       userAuth = await userAuth.save()
-      let user = await User.forge({id: userAuth.get('UserId')}).fetch()
+      let user = await User.forge({id: userAuth.get('UserId')}).fetch({ require: false })
       return user.serialize()
     }
   }

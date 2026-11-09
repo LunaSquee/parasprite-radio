@@ -18,8 +18,10 @@ mediainfo(process.argv[2]).then(function (res) {
   // delete res[0].cover_data
   // console.error(res[0])
 
-  if (res[0].track_name) {
-    output.title = res[0].track_name
+  // MediaInfo < 17 called it Track_name; newer XML (schema 2.0) uses Title/Track
+  const title = res[0].track_name || res[0].title || res[0].track
+  if (title) {
+    output.title = title
   }
   if (res[0].performer) {
     output.artist = res[0].performer

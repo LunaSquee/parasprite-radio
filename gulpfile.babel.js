@@ -7,7 +7,8 @@ import fs from 'fs'
 // gulp and utilities
 import gulp from 'gulp'
 import sourcemaps from 'gulp-sourcemaps'
-import gutil from 'gulp-util'
+import log from 'fancy-log'
+import PluginError from 'plugin-error'
 import gdata from 'gulp-data'
 import del from 'del'
 import gulpif from 'gulp-if'
@@ -15,7 +16,6 @@ import plumber from 'gulp-plumber'
 import mergeStream from 'merge-stream'
 import { assign } from 'lodash'
 import BrowserSync from 'browser-sync'
-import Sequence from 'run-sequence'
 import watch from 'gulp-watch'
 import lazypipe from 'lazypipe'
 import realFavicon from 'gulp-real-favicon'
@@ -39,7 +39,6 @@ import htmlmin from 'gulp-htmlmin'
 import watchPug from 'gulp-watch-pug'
 
 const browserSync = BrowserSync.create()
-const sequence = Sequence.use(gulp)
 
 let sources = {
   // script: ['main.js', 'admin.coffee', 'popout.js', 'livestream.js'],
@@ -84,15 +83,15 @@ let watchOpts = {
 let faviconDataFile = 'build/icons/favicon-data.json'
 
 let wpCompiler = webpack(assign({}, webpackConfig, {
-  cache: {},
+  cache: { type: 'memory' },
   devtool: inProduction ? 'source-map' : 'inline-source-map'
 }))
 
 function webpackTask (callback) {
   // run webpack
   wpCompiler.run(function (err, stats) {
-    if (err) throw new gutil.PluginError('webpack', err)
-    gutil.log('[script]', stats.toString({
+    if (err) throw new PluginError('webpack', err)
+    log('[script]', stats.toString({
       colors: true,
       hash: false,
       version: false,
@@ -100,7 +99,10 @@ function webpackTask (callback) {
       chunkModules: false
     }))
     browserSync.reload()
-    if (typeof callback === 'function') callback()
+    // when run as a gulp task (not from watch), fail the build on errors
+    if (typeof callback === 'function') {
+      callback(stats.hasErrors() ? new PluginError('webpack', 'compilation failed') : undefined)
+    }
   })
 }
 

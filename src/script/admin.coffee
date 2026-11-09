@@ -1,4 +1,5 @@
-path = require 'path'
+# no Node 'path' in the browser (webpack 5 doesn't polyfill it)
+joinPath = (a, b) -> a.replace(/\/+$/, '') + '/' + b.replace(/^\/+/, '')
 app = require './app'
 
 #Backbone.emulateHTTP = true
@@ -40,7 +41,7 @@ app.commands.setHandler 'play:track', (file) ->
 	audioTag.play()
 
 app.commands.setHandler "queue:track", (track) ->
-	filename = if track.get('file') then path.join(window.config.general_media_dir, track.get('file')) else track.get('url')
+	filename = if track.get('file') then joinPath(window.config.general_media_dir, track.get('file')) else track.get('url')
 	console.log(filename)
 	$.ajax
 		url: config.server_api_prefix+"/queue?add="+encodeURIComponent(filename)+"&id=3"

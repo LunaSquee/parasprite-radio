@@ -4,15 +4,11 @@
 FROM node:24-trixie-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --legacy-peer-deps --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 COPY . .
 # gulp reads conf/radio.toml for site settings; fall back to the defaults
 RUN [ -f conf/radio.toml ] || cp conf/radio.default.toml conf/radio.toml
-# webpack 4 needs the legacy OpenSSL provider (md4) on Node 17+.
-# The gulp webpack task logs errors without failing, hence the test.
-RUN NODE_ENV=production NODE_OPTIONS=--openssl-legacy-provider \
-    npx gulp script style document && \
-    test -f build/script/main.js
+RUN NODE_ENV=production npx gulp script style document
 
 # --- runtime ---
 FROM node:24-trixie-slim
@@ -23,7 +19,7 @@ RUN apt-get update && \
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --legacy-peer-deps --no-audit --no-fund && npm cache clean --force
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 
 COPY .babelrc knexfile.js ./
 COPY bin ./bin

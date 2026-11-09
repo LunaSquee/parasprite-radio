@@ -14,7 +14,7 @@ const Show = bookshelf.Model.extend({
 
 const API = {
   create: async function (userId, info) {
-    let user = await User.forge({id: userId}).where({canMakeShows: true}).fetch()
+    let user = await User.forge({id: userId}).where({canMakeShows: true}).fetch({ require: false })
     if (!user) {
       throw new Error('Permission denied')
     }
@@ -59,7 +59,7 @@ const API = {
   remove (userId, showId) {
     return Show.forge({id: showId})
       .where({UserId: userId})
-      .destroy()
+      .destroy({ require: false })
   },
 
   updateToken: async function (userId, showId) {
@@ -69,7 +69,7 @@ const API = {
   },
 
   authUser: async function (authToken) {
-    let show = await Show.forge().where({authToken: authToken}).fetch()
+    let show = await Show.forge().where({authToken: authToken}).fetch({ require: false })
     if (!show) {
       throw new Error('Invalid auth token')
     }
@@ -77,7 +77,8 @@ const API = {
     if (!user) {
       throw new Error('Permission denied')
     }
-    return {show, user}
+    // plain object: callers read show.name etc. directly
+    return { show: show.serialize(), user }
   }
 }
 

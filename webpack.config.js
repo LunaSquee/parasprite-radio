@@ -1,10 +1,11 @@
 'use strict'
-import webpack from 'webpack'
-import path from 'path'
+// CommonJS on purpose: gulp 5 only runs Babel on *.babel.js files
+const webpack = require('webpack')
+const path = require('path')
 
-let inProduction = process.env.NODE_ENV === 'production' || process.argv.indexOf('-p') !== -1
+const inProduction = process.env.NODE_ENV === 'production' || process.argv.indexOf('-p') !== -1
 
-export default {
+module.exports = {
   entry: {
     main: ['./src/script/main'],
     admin: ['./src/script/admin'],
@@ -12,9 +13,9 @@ export default {
     livestream: ['./src/script/livestream']
   },
   output: {
-    path: __dirname,
-    filename: './build/script/[name].js',
-    chunkFilename: './build/script/[id].js'
+    path: path.join(__dirname, 'build/script'),
+    filename: '[name].js',
+    chunkFilename: '[id].js'
   },
   module: {
     rules: [
@@ -45,7 +46,7 @@ export default {
     modules: [path.join(__dirname, '/src/script'), 'node_modules'],
 
     alias: {
-      'underscore': 'lodash'
+      underscore: 'lodash'
     }
   },
 

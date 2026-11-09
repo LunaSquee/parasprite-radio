@@ -1,34 +1,50 @@
 'use strict'
 
 const path = require('path')
-const urlparse = require('url').parse
 const config = require(path.join(__dirname, 'config'))
 
-function fetcher (url, opt, callback) {
+const MAX_REDIRECTS = 5
+const TIMEOUT = 15 * 1000
+
+function fetcher (url, opt, callback, redirects = 0) {
   let sentCallback = false
   if (typeof opt === 'function') {
     callback = opt
     opt = {}
   }
   opt = opt || {}
-  let parsed = urlparse(url)
+  let parsed
+  try {
+    parsed = new URL(url)
+  } catch (e) {
+    callback('Invalid URL: ' + url)
+    return
+  }
   let opts = {
     hostname: parsed.hostname,
-    port: parsed.port,
-    path: parsed.path,
+    port: parsed.port || undefined,
+    path: parsed.pathname + parsed.search,
+    timeout: TIMEOUT,
     headers: {
       'user-agent': config.general.userAgent || 'node'
     }
   }
 
   for (let k in opt) {
-    opts[k] = opt[k]
+    if (k !== 'stream') opts[k] = opt[k]
   }
 
   let httpModule = parsed.protocol === 'https:' ? require('https') : require('http')
   httpModule.get(opts, function (res) {
-    if (res.statusCode === 302 || res.statusCode === 301) {
-      fetchJSON.call(this, res.headers.location, callback)
+    if ([301, 302, 303, 307, 308].indexOf(res.statusCode) !== -1 && res.headers.location) {
+      res.resume()
+      sentCallback = true
+      if (redirects >= MAX_REDIRECTS) {
+        callback('Too many redirects')
+        return
+      }
+      // Location may be relative
+      fetcher(new URL(res.headers.location, parsed).href, opt, callback, redirects + 1)
       return
     }
     let data = []
@@ -49,6 +65,8 @@ function fetcher (url, opt, callback) {
         }
       })
     }
+  }).on('timeout', function () {
+    this.destroy(new Error('Request timed out: ' + url))
   }).on('error', function (e) {
     if (!sentCallback) {
       callback(e.message)

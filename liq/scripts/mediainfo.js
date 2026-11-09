@@ -1,6 +1,6 @@
 
 const spawn = require('child_process').spawn
-const pify = require('pify')
+const { promisify } = require('util')
 const parseString = require('xml2js').parseString
 
 module.exports = async function () {
@@ -15,6 +15,8 @@ module.exports = async function () {
   let bufs = []
   child.stdout.on('data', (d) => bufs.push(d))
   let output = await new Promise((resolve, reject) => {
+    // e.g. mediainfo not installed: reject so the caller's fallback runs
+    child.once('error', reject)
     child.stdout.once('end', () => {
       resolve(Buffer.concat(bufs))
     })
@@ -22,7 +24,7 @@ module.exports = async function () {
 
   let tracks = [] // hold all tracks JSON object
 
-  let result = await pify(parseString)(output)
+  let result = await promisify(parseString)(output)
   result.MediaInfo.media.forEach((fileObj) => {
     let tmpTrack
     let trackList = [] // hold track JSON in list
