@@ -91,12 +91,16 @@ callbackURL = "http://localhost/auth/poniverse/callback"
 
 # Metadata scrobbling
 [lastfm]
+# scrobbling: needs username/password below plus api.key and api.secret
 enable = false
 username = "djazzradio"
 password = ""
 [lastfm.api]
+# get a key/secret at https://www.last.fm/api/account/create
+# (key alone is enough for the recently played list on the site)
 enable = false
 key = ""
+secret = ""
 limit = 10
 
 # Now playing on Tunein

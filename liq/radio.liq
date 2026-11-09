@@ -49,11 +49,27 @@ live_meta = ref([])
 live_token = ref("")
 live_busy = ref(false)
 
-if confbool("lastfm.enable") then
-	log.important("lastfm.enable is set, but Last.fm scrobbling is not available in Liquidsoap 2.x; ignoring.")
+# Last.fm scrobbling (API 2.0) via scripts/lastfm.js; Liquidsoap 2.x has no
+# built-in support and the old Audioscrobbler protocol it used is gone.
+lastfm_enabled = confbool("lastfm.enable")
+lastfm_track_start = ref(0.)
+
+def lastfm(action, m, extra="") =
+	keep = ["artist", "title", "album", "albumartist", "album_artist", "tracknumber", "duration"]
+	data = assoc_to_json(list.filter(fun(p) -> list.mem(fst(p), keep), m))
+	r = process.run(timeout=30., "node scripts/lastfm #{action} #{process.quote(data)} #{extra}")
+	if r.status == "exit" and r.status.code == 0 then
+		msg = string.trim(r.stdout)
+		if msg != "" then print(msg) end
+	else
+		log.important("Last.fm #{action} failed (#{r.status}): #{string.trim(r.stderr)}")
+	end
 end
 
 def scrobble_nowplaying(m)
+	if lastfm_enabled then
+		lastfm("nowplaying", m)
+	end
 	if confbool("tunein.enable") then
 		print("Scrobbling now playing to TuneIn")
 		tunein_nowplaying(partner_id=confstr("tunein.partnerId"), partner_key=confstr("tunein.partnerKey"), station_id=confstr("tunein.stationId"), m)
@@ -206,8 +222,35 @@ announce = stereo(request.queue(id="announce", timeout=60.))
 
 music = fallback(id="music", [queue1, queue2, queue3, default])
 
-# scrobble music (tunein) but not jingles etc..
+# scrobble music (last.fm & tunein) but not jingles, announcements or live
+music.on_track(synchronous=true, fun(_) -> lastfm_track_start := time())
 music.on_track(synchronous=false, scrobble_nowplaying)
+
+# Last.fm rules: only tracks longer than 30s, scrobbled once half the track
+# or 4 minutes has actually played (unknown duration: after 4 minutes).
+# Position only advances while music plays, so live shows don't count.
+def lastfm_threshold() =
+	d = music.duration()
+	if d <= 0. then
+		240.
+	elsif d <= 30. then
+		# past the end of the track, so never reached (allow_partial=false).
+		# Not `infinity`: on_position fires immediately with that.
+		d + 60.
+	else
+		min(240., d / 2.)
+	end
+end
+
+if lastfm_enabled then
+	music.on_position(
+		synchronous=false,
+		remaining=false,
+		allow_partial=false,
+		position=lastfm_threshold,
+		fun(_, m) -> lastfm("scrobble", m, string(int_of_float(lastfm_track_start())))
+	)
+end
 
 # TODO: replace with jingles
 #music = rotate(weights=[1,7], [friendship,music])
