@@ -89,6 +89,9 @@ authorizationURL = "https://poniverse.net/oauth/authorize"
 tokenURL = "https://poniverse.net/oauth/access_token"
 callbackURL = "http://localhost/auth/poniverse/callback"
 
+[passport.password]
+enabled = true
+
 # Metadata scrobbling
 [lastfm]
 # scrobbling: needs username/password below plus api.key and api.secret

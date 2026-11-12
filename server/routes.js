@@ -1,6 +1,6 @@
 
 import path from 'path'
-import fs from 'fs'
+import fs, { stat } from 'fs'
 import dns from 'dns'
 import express from 'express'
 import passport from 'passport'
@@ -232,6 +232,10 @@ export default function (app) {
     failureRedirect: '/login'
     // failureFlash: 'Login failed'
     // successFlash: 'Login succeeded'
+  }))
+
+  passportRouter.post('/auth/local', passport.authenticate('local', {
+    successRedirect: '/'
   }))
 
   passportRouter.get('/logout', (req, res) => {

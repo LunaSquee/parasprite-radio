@@ -268,6 +268,16 @@ html
 						a.button(href="/auth/twitter") Login with Twitter
 						br
 						br
+						form#localLoginForm
+							div
+								label(for='inputAccountUsername') Username:
+								input#inputAccountUsername(type='text',name='username',autocomplete='username')
+							div
+								label(for='inputAccountPassword') Password:
+								input#inputAccountPassword(type='password',name='password',autocomplete='current-password')
+							button#login(type='submit') Log in
+						br
+						br
 				#pageAccount.page-wrapper(style='display: none;')
 					strong Account
 					br

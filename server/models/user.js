@@ -1,5 +1,9 @@
 
 import { bookshelf } from '../db'
+import { scrypt, timingSafeEqual } from 'crypto'
+import { promisify } from 'util'
+
+const scryptAsync = promisify(scrypt);
 
 const User = bookshelf.Model.extend({
   tableName: 'Users',
@@ -85,6 +89,26 @@ const API = {
       let user = await User.forge({id: userAuth.get('UserId')}).fetch({ require: false })
       return user.serialize()
     }
+  },
+
+  handleLocalAuth: async function (info) {
+    let userAuth = await UserAuth.forge({provider: "local", username: info.username}).fetch({ require: false })
+    if (!userAuth) {
+      throw new Error('user not found')
+    }
+
+    const [_, id, salt, hash] = userAuth.get('accessToken').split('$')
+    if (id !== '7914' || !salt || !hash) {
+      throw new Error('user not found')
+    }
+
+    const rehashed = await scryptAsync(info.password, Buffer.from(salt, 'base64'), 64)
+    if (!timingSafeEqual(rehashed, Buffer.from(hash, 'base64'))) {
+      throw new Error('user not found')
+    }
+    
+    let user = await User.forge({id: userAuth.get('UserId')}).fetch({ require: false })
+    return user.serialize()
   }
 }
 

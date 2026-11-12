@@ -2,6 +2,7 @@
 import passport from 'passport'
 import { Strategy as TwitterStrategy } from 'passport-twitter'
 import { Strategy as OAuth2Strategy } from 'passport-oauth2'
+import { Strategy as LocalStrategy } from 'passport-local'
 import User from './models/user'
 import config from '../scripts/config'
 import { fetchJSON } from '../scripts/fetcher'
@@ -65,5 +66,11 @@ if (config.passport.twitter && config.passport.twitter.consumerKey) {
     }
 
     User.handleAuth(userInfo).then((user) => done(null, user)).catch((err) => { throw err })
+  }))
+}
+
+if (config.passport.password?.enabled) {
+  passport.use(new LocalStrategy(function verify(username, password, done) {
+    User.handleLocalAuth({ username, password }).then((user) => done(null, user)).catch((err) => { throw err })
   }))
 }

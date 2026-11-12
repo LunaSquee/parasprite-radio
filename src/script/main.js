@@ -61,11 +61,12 @@ api.user.fetch().then(function () {
       document.getElementById('body').classList.add('isadmin')
     }
     document.getElementById('editAccountForm').addEventListener('submit', function (e) {
+      e.preventDefault()
       const fields = this.elements
       m.request({
         method: 'POST',
         url: '/api/user',
-        data: {
+        body: {
           username: fields.inputAccountUsername.value,
           displayName: fields.inputAccountDisplayName.value,
           email: fields.inputAccountEmail.value,
@@ -76,7 +77,6 @@ api.user.fetch().then(function () {
       }).catch((err) => {
         console.log(err)
       })
-      e.preventDefault()
     }, false)
   }
   initialize()
@@ -306,4 +306,21 @@ menudiv.addEventListener('click', function (e) {
       livestream.disable()
     }
   }
+}, false)
+
+document.getElementById('localLoginForm').addEventListener('submit', function (e) {
+  e.preventDefault()
+  const fields = this.elements
+  m.request({
+    method: 'POST',
+    url: '/auth/local',
+    body: {
+      username: fields.inputAccountUsername.value,
+      password: fields.inputAccountPassword.value,
+    }
+  }).then(() => {
+    window.location.reload()
+  }).catch((err) => {
+    console.log(err)
+  })
 }, false)
