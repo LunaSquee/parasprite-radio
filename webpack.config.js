@@ -43,11 +43,9 @@ module.exports = {
 
   resolve: {
     extensions: ['.coffee', '.js', '.json', '.mustache'],
-    modules: [path.join(__dirname, '/src/script'), 'node_modules'],
-
-    alias: {
-      underscore: 'lodash'
-    }
+    // No underscore -> lodash alias: the admin's Marionette 2.4 relies on
+    // underscore's `_.each(list, fn, context)`, which lodash 4 dropped.
+    modules: [path.join(__dirname, '/src/script'), 'node_modules']
   },
 
   plugins: [

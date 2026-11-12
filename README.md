@@ -138,13 +138,17 @@ website. The station fades over to the live show and records it to
 ```
 docker compose logs -f liquidsoap server   # follow the logs
 docker compose restart liquidsoap          # after editing liq/*.liq or conf/radio.toml
-docker compose up -d --build server        # after changing server/ or src/ code
+docker compose restart server              # after editing conf/radio.toml
+docker compose up -d --build server        # after changing server/ or src/ code, or site settings
 docker compose down                        # stop everything (data is kept)
 ```
 
 The `liquidsoap` container runs straight from the repo, so a restart picks up
 changes. The `server` image has the code and the built frontend baked in, so it
-needs a rebuild.
+needs a rebuild. Some settings from `conf/radio.toml` are also written into the
+web pages at build time: the URLs, station title, Icecast mounts, music folder,
+and the Google and livestream settings. Rebuild after changing those. The build
+reads `conf/radio.toml` as a Docker build secret, so it isn't stored in the image.
 
 To run Liquidsoap in dev mode (HLS stream only, no Icecast), change its
 `command` in `docker-compose.yml` to `["radio.liq", "--", "dev"]`.

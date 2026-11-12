@@ -63,6 +63,9 @@ services:
     build:
       context: .
       dockerfile: docker/server/Dockerfile
+      # site settings are baked into the HTML at build time
+      secrets:
+        - radio_toml
     restart: unless-stopped
     # create/upgrade the database schema, then start the web server
     command: ["sh", "-c", "node_modules/.bin/knex migrate:latest && exec node bin/startserver"]
@@ -84,3 +87,7 @@ services:
 
 networks:
   parasprite:
+
+secrets:
+  radio_toml:
+    file: ./conf/radio.toml

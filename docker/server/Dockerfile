@@ -6,9 +6,15 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
-# gulp reads conf/radio.toml for site settings; fall back to the defaults
-RUN [ -f conf/radio.toml ] || cp conf/radio.default.toml conf/radio.toml
-RUN NODE_ENV=production npx gulp script style document
+# The pug templates bake site settings (URLs, title, mounts, media_dir...) into
+# the HTML, so gulp needs the real conf/radio.toml. It comes in as a build
+# secret (see docker-compose.yml) so it never ends up in an image layer;
+# without it the defaults are used. Rebuild after changing those settings.
+RUN --mount=type=secret,id=radio_toml \
+    if [ -f /run/secrets/radio_toml ]; then cp /run/secrets/radio_toml conf/radio.toml; \
+    else echo "no radio_toml build secret, using conf/radio.default.toml"; cp conf/radio.default.toml conf/radio.toml; fi && \
+    NODE_ENV=production npx gulp script style document && \
+    rm conf/radio.toml
 
 # --- runtime ---
 FROM node:24-trixie-slim

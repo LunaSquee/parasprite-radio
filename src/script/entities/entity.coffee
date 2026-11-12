@@ -67,13 +67,21 @@ class Entity.Track extends Backbone.Model
 class Entity.Directory extends Backbone.Model
 	idAttribute: 'directory'
 
+# Polymorphic collection model. Must be a plain function, not a class
+# method: Backbone calls `new this.model()`, and CoffeeScript 2 compiles class
+# methods to ES6 methods, which can't be constructed and have no prototype.
+trackOrDirectory = (attrs, options) ->
+	if attrs.directory
+		new Entity.Directory attrs, options
+	else
+		new Entity.Track attrs, options
+
 class Entity.Tracks extends Entity.SortableCollection
 	sortFields: ['directory', 'album', 'albumartist', 'disc', 'track', 'artist', 'title', 'file']
-	model: (attrs, options) ->
-		if attrs.directory
-			new Entity.Directory attrs, options
-		else
-			new Entity.Track attrs, options
+	model: trackOrDirectory
+	# Backbone can't read idAttribute from a factory function
+	modelId: (attrs) ->
+		attrs.directory or attrs.file
 
 class Entity.Album extends Backbone.Model
 	idAttribute: 'album'
